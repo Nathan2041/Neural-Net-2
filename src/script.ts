@@ -12,7 +12,7 @@ class Matrix {
 	}
 
 	public get transpose(): Matrix {
-		let matrixTransposed = new Matrix(this.data[0].length, this.data.length);
+		let matrixTransposed = new Matrix(this.data.length, this.data[0].length);
 		for (let i = 0; i < this.data.length; i++) {
 		for (let j = 0; j < this.data[i].length; j++) {
 			matrixTransposed.data[j][i] = this.data[i][j];
@@ -55,14 +55,14 @@ class Matrix {
 	}
 
 	public scale(scalar: number): Matrix {
-		let result = new Matrix(this.data.length, this.data[0].length, this.data);
+    let result = new Matrix(this.data[0].length, this.data.length, this.data);
 
-		for (let i = 0; i < this.data.length; i++) {
-		for (let j = 0; j < this.data[0].length; j++) {
-				result.data[i][j] *= scalar;
-		} }
+    for (let i = 0; i < this.data.length; i++) {
+    for (let j = 0; j < this.data[0].length; j++) {
+			result.data[i][j] *= scalar;
+    } }
 
-		return result
+    return result
 	}
 }
 
@@ -92,24 +92,143 @@ class Vector extends Matrix {
 class Network {
 	public layers: Layer[];
 	public activationFunction: ActivationFunction;
-	constructor(activationFunction: ActivationFunction, layers: number, neurons: number[], neuronTypes: NeuronType[], layerTypes: LayerType[]) {
+	constructor(activationFunction: ActivationFunction, neurons: number[]) {
 		this.activationFunction = activationFunction;
 
-		if (neurons.length !== layers || neuronTypes.length !== layers || layerTypes.length !== layers) { throw new Error('Neurons, neuronTypes and layerTypes arrays must match number of layers') }
+		if (neurons.length < 2) { throw new Error('Network must have at least 2 layers (input and output)') }
 
 		this.layers = [];
-		for (let i: number = 0; i < layers; i++) {
-		let previousNeurons: number = (i == 0 ? 0 : neurons[i - 1]);
+		for (let i: number = 0; i < neurons.length; i++) {
+			let previousNeurons: number = (i == 0 ? 0 : neurons[i - 1]);
+			let isInputLayer: boolean = (i == 0);
+			let isOutputLayer: boolean = (i == neurons.length - 1);
 
-		match(layerTypes[i])
-			.with(LayerType.Input, () => { this.layers.push(new InputLayer(neurons[i])) })
-			.with(LayerType.Output, () =>  { this.layers.push(new OutputLayer(neurons[i], previousNeurons)) })
-			.with(LayerType.Hidden, () => { this.layers.push(new Layer(neurons[i], previousNeurons)) })
-			.otherwise(() => { this.layers.push(new Layer(neurons[i], previousNeurons)) });
+			if (isInputLayer) { this.layers.push(new InputLayer(neurons[i])) }
+			else if (isOutputLayer) { this.layers.push(new OutputLayer(neurons[i], previousNeurons)) }
+			else { this.layers.push(new Layer(neurons[i], previousNeurons)) }
 		}
 	}
-	
-	public output(inputData: Vector): any {} // TODO
+
+	public output(inputData: Vector): Vector {
+		if (inputData.data[0].length !== this.layers[0].neurons.length) { throw new Error('Input size does not match input layer size') }
+
+		for (let i = 0; i < this.layers[0].neurons.length; i++) {
+			this.layers[0].neurons[i].value = inputData.data[0][i];
+		}
+
+		let currentOutput: Vector = inputData;
+
+		for (let i = 1; i < this.layers.length; i++) {
+			let weights: number[][] = [];
+			for (let j = 0; j < this.layers[i].neurons.length; j++) { weights.push(this.layers[i].neurons[j].weights) }
+			
+			let weightMatrix = new Matrix(weights[0].length, weights.length, weights);
+
+			let biases: number[] = [];
+			for (let j = 0; j < this.layers[i].neurons.length; j++) { biases.push(this.layers[i].neurons[j].bias) }
+
+			let preActivation = new Vector(weightMatrix.multiply(currentOutput.transpose).data.map(row => row[0]));
+			for (let j = 0; j < preActivation.data[0].length; j++) { preActivation.data[0][j] += biases[j] }
+
+			let isOutputLayer: boolean = (i == this.layers.length - 1);
+
+			if (isOutputLayer) {
+				let maxVal: number = Math.max(...preActivation.data[0]);
+				let expValues: number[] = [];
+				let sumExp: number = 0;
+					
+				for (let j = 0; j < preActivation.data[0].length; j++) {
+					let expVal: number = Math.exp(preActivation.data[0][j] - maxVal);
+					expValues.push(expVal);
+					sumExp += expVal;
+				}
+					
+				let softmaxOutput: number[] = [];
+				for (let j = 0; j < expValues.length; j++) { softmaxOutput.push(expValues[j] / sumExp) }
+				
+				currentOutput = new Vector(softmaxOutput);
+			} else {
+				let activated: number[] = [];
+				for (let j = 0; j < preActivation.data[0].length; j++) {
+					activated.push(this.activationFunction(preActivation.data[0][j]));
+				}
+				currentOutput = new Vector(activated);
+			}
+
+			for (let j = 0; j < this.layers[i].neurons.length; j++) {
+				this.layers[i].neurons[j].value = currentOutput.data[0][j];
+			}
+		}
+
+		return currentOutput
+	}
+
+	public train(inputData: Vector, expectedOutput: Vector, learningRate: number): number {
+		let output: Vector = this.output(inputData);
+
+		let crossEntropyLoss: number = 0;
+		for (let i = 0; i < output.data[0].length; i++) {
+    	if (expectedOutput.data[0][i] > 0) {
+        crossEntropyLoss -= expectedOutput.data[0][i] * Math.log(output.data[0][i] + 1e-15);
+    	}
+		}
+
+		let activations: Vector[] = [];
+		let deltas: Vector[] = [];
+
+		for (let i = 0; i < this.layers.length; i++) {
+			let values: number[] = [];
+			for (let j = 0; j < this.layers[i].neurons.length; j++) {
+				values.push(this.layers[i].neurons[j].value as number);
+			}
+			activations.push(new Vector(values));
+		}
+
+		let outputDelta: number[] = [];
+		for (let i = 0; i < output.data[0].length; i++) {
+			outputDelta.push(output.data[0][i] - expectedOutput.data[0][i]);
+		}
+		deltas.push(new Vector(outputDelta));
+
+		for (let i = this.layers.length - 2; i > 0; i--) {
+			let weights: number[][] = [];
+			for (let j = 0; j < this.layers[i + 1].neurons.length; j++) {
+				weights.push(this.layers[i + 1].neurons[j].weights);
+			}
+			let weightMatrix = new Matrix(weights[0].length, weights.length, weights);
+
+			let nextDelta: Vector = deltas[deltas.length - 1];
+			let nextDeltaMatrix = new Matrix(1, nextDelta.data[0].length, [nextDelta.data[0]]);
+			let errorPropagated: Matrix = weightMatrix.transpose.multiply(nextDeltaMatrix.transpose);
+
+			let currentDelta: number[] = [];
+			for (let j = 0; j < this.layers[i].neurons.length; j++) {
+				let activation: number = activations[i].data[0][j];
+				let derivative: number = activation * (1 - activation);
+				currentDelta.push(errorPropagated.data[j][0] * derivative);
+			}
+			deltas.push(new Vector(currentDelta));
+		}
+
+		deltas.reverse();
+
+		for (let i = 1; i < this.layers.length; i++) {
+			let delta: Vector = deltas[i - 1];
+			let previousActivation: Vector = activations[i - 1];
+
+			for (let j = 0; j < this.layers[i].neurons.length; j++) {
+				let neuron: Neuron = this.layers[i].neurons[j];
+
+				for (let k = 0; k < neuron.weights.length; k++) {
+					neuron.weights[k] -= learningRate * delta.data[0][j] * previousActivation.data[0][k];
+				}
+
+				neuron.bias -= learningRate * delta.data[0][j];
+			}
+		}
+
+		return crossEntropyLoss;
+	}
 }
 
 class Layer {
@@ -143,7 +262,7 @@ class Neuron {
 	public value: number | null;
 	public neuronType: NeuronType;
 	constructor(weights: number) {
-		this.weights = (new Array(weights).fill(null)).map(() => Math.random());
+		this.weights = (new Array(weights).fill(null)).map(() => (Math.random() - 0.5) * 2 * Math.sqrt(2 / weights) );
 		this.bias = Math.random();
 		this.value = null;
 		this.neuronType = NeuronType.Hidden;
@@ -199,6 +318,8 @@ enum NeuronType {
 
 const datasetURL: string = '/MNIST-test-dataset.json.gz';
 
+let learningRate: number = 0.01;
+
 let canvasSize: number = 300;
 
 let canvas1 = document.getElementById('canvas1') as HTMLCanvasElement;
@@ -232,7 +353,23 @@ type _TupleOf<T, N extends number, R extends unknown[]> = R['length'] extends N
   ? R 
   : _TupleOf<T, N, [T, ...R]>;
 
-type DataType = { image: Tuple<number, 784>, label: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 }[];
+type Digit = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
+type DataType = { image: Tuple<number, 784>, label: Digit }[];
+
+let toOneHotEncodng = (digit: Digit): Tuple<number, 10> => 
+	match(digit)
+		.returnType<Tuple<number, 10>>()
+		.with(0, () => [1, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+		.with(1, () => [0, 1, 0, 0, 0, 0, 0, 0, 0, 0])
+		.with(2, () => [0, 0, 1, 0, 0, 0, 0, 0, 0, 0])
+		.with(3, () => [0, 0, 0, 1, 0, 0, 0, 0, 0, 0])
+		.with(4, () => [0, 0, 0, 0, 1, 0, 0, 0, 0, 0])
+		.with(5, () => [0, 0, 0, 0, 0, 1, 0, 0, 0, 0])
+		.with(6, () => [0, 0, 0, 0, 0, 0, 1, 0, 0, 0])
+		.with(7, () => [0, 0, 0, 0, 0, 0, 0, 1, 0, 0])
+		.with(8, () => [0, 0, 0, 0, 0, 0, 0, 0, 1, 0])
+		.with(9, () => [0, 0, 0, 0, 0, 0, 0, 0, 0, 1])
+		.exhaustive();
 
 async function loadDataset(url: string): Promise<DataType> {
 	let response: Response = await fetch(url);
@@ -262,8 +399,103 @@ function drawData(index: number, span: HTMLSpanElement, canvas: HTMLCanvasElemen
 	span.innerText = `${dataset[index].label}`;
 }
 
+// Sanity check
+
 drawData(0, span, canvas1, ctx1);
 
 button.addEventListener('click', () => {
-	drawData(Math.floor(Math.random() * (datasetLength + 1)), span, canvas1, ctx1);
-})
+	let randomIndex: number = Math.floor(Math.random() * datasetLength);
+	drawData(randomIndex, span, canvas1, ctx1);
+	
+	// Test the network's prediction
+	let input = new Vector(dataset[randomIndex].image.map(pixel => pixel / 255));
+	let output: Vector = net.output(input);
+	let prediction: number = output.data[0].indexOf(Math.max(...output.data[0]));
+	console.log(`Actual: ${dataset[randomIndex].label}, Predicted: ${prediction}`);
+});
+
+// Create network: 784 inputs, 128 hidden, 10 outputs
+let net = new Network(
+  (x) => 1 / (1 + Math.exp(-x)), // Sigmoid
+  [784, 128, 128, 10]
+);
+
+// Replace the training loop at the bottom with this async version:
+
+let passes: number = 5;
+
+// Global flag to control training
+let isTraining: boolean = false;
+let shouldStop: boolean = false;
+
+// Helper function to yield to the browser
+function sleep(ms: number = 0): Promise<void> {
+	return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function trainNetwork(): Promise<undefined> {
+	if (isTraining) {
+		console.log('Training already in progress!');
+		return;
+	}
+	
+	isTraining = true;
+	shouldStop = false;
+	console.log('Training started. Type stopTraining() to stop.');
+	
+	let error: number = 0;
+	
+	for (let pass: number = 0; pass < passes; pass++) {
+		if (shouldStop) {
+			console.log('Training stopped by user.');
+			break;
+		}
+		
+		for (let i = 0; i < datasetLength; i++) {
+			if (shouldStop) {
+				console.log('Training stopped by user.');
+				break;
+			}
+			
+			let input = new Vector(dataset[i].image.map(pixel => pixel / 255));
+			let expected = new Vector(toOneHotEncodng(dataset[i].label));
+			error = net.train(input, expected, learningRate);
+
+			// Log progress
+			if (i % 200 == 0) { 
+				console.log(`Pass ${pass + 1}, Sample ${i}: ${error}`);
+			}
+			
+			// Yield to browser every 50 samples to keep UI responsive
+			if (i % 50 == 0) {
+				await sleep(0);
+			}
+		}
+		
+		if (!shouldStop) {
+			console.log(`Pass ${pass + 1} complete. Final error: ${error}`);
+		}
+	}
+	
+	if (!shouldStop) {
+		console.log('Training complete!');
+	}
+	
+	isTraining = false;
+}
+
+// Function to stop training (call from console)
+function stopTraining(): undefined {
+	if (!isTraining) {
+		console.log('No training in progress.');
+		return;
+	}
+	console.log('Stopping training...');
+	shouldStop = true;
+}
+
+// Make stopTraining available globally
+(window as any).stopTraining = stopTraining;
+
+// Start training
+trainNetwork();
