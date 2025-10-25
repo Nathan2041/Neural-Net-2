@@ -2,6 +2,7 @@ import { match, P } from 'ts-pattern';
 import { styled } from 'styled-components';
 import { Chalk } from 'chalk';
 
+const datasetURL: string = '/MNIST-test-dataset.json.gz';
 class Matrix {
 	public data: number[][];
 
@@ -22,7 +23,7 @@ class Matrix {
 	}
 
 	public hadamardProduct(matrix: Matrix): Matrix {
-		if (this.data.length !== matrix.data.length || this.data[0].length !== matrix.data[0].length) { throw new Error(`Matrix dimention mismatch hadamard ${this.data.length} must equal ${matrix.data.length} and ${this.data[0].length} must equal ${matrix.data[0].length}`) }
+		if (this.data.length !== matrix.data.length || this.data[0].length !== matrix.data[0].length) { throw new Error(`Matrix dimension mismatch hadamard ${this.data.length} must equal ${matrix.data.length} and ${this.data[0].length} must equal ${matrix.data[0].length}`) }
 
 		let result = new Matrix(this.data[0].length, this.data.length);
 
@@ -298,6 +299,33 @@ class OutputNeuron extends Neuron {
 	}
 }
 
+async function loadDataset(url: string): Promise<DataType> {
+	let response: Response = await fetch(url);
+	
+	if (!response.ok) { throw new Error(`HTTP ${response.status}`) }
+	
+	let text: string = await response.text();
+	let data: DataType = JSON.parse(text);
+	
+	return data
+}
+
+let dataset: DataType = await loadDataset(datasetURL);
+let datasetLength: number = dataset.length;
+
+function drawData(index: number, span: HTMLSpanElement, canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D): void {
+	let pixelSize: number = canvas.width / 28;
+	
+	for (let i = 0; i < 28; i++) {
+	for (let j = 0; j < 28; j++) {
+		let color: number = dataset[index].image[j * 28 + i];
+		ctx.fillStyle = `rgb(${color}, ${color}, ${color})`;
+		ctx.fillRect(i * pixelSize, j * pixelSize, pixelSize + 1, pixelSize + 1);
+	}	}
+	
+	span.innerText = `${dataset[index].label}`;
+}
+
 type ActivationFunction = (n: number) => number
 
 enum LayerType {
@@ -311,37 +339,6 @@ enum NeuronType {
 	Hidden = 'HIDDEN_NEURON',
 	Output = 'OUTPUT_NEURON'
 }
-
-//////////////////////////////////////////////////////////////////////////////////////////////////////
-//                                          IMPLEMENTATION                                          //
-//////////////////////////////////////////////////////////////////////////////////////////////////////
-
-const datasetURL: string = '/MNIST-test-dataset.json.gz';
-
-let learningRate: number = 0.01;
-
-let canvasSize: number = 300;
-
-let canvas1 = document.getElementById('canvas1') as HTMLCanvasElement;
-canvas1.width = canvasSize;
-canvas1.height = canvasSize;
-canvas1.style.border = '1px solid black';
-
-let ctx1 = canvas1.getContext('2d') as CanvasRenderingContext2D;
-
-let canvas2 = document.getElementById('canvas1') as HTMLCanvasElement;
-canvas1.width = canvasSize;
-canvas1.height = canvasSize;
-canvas1.style.border = `1px solid black`;
-
-let ctx2 = canvas1.getContext('2d') as CanvasRenderingContext2D;
-
-let span = document.querySelector('span') as HTMLSpanElement;
-span.style.display = `block`;
-
-let button = document.querySelector('button') as HTMLButtonElement;
-button.innerText = 'New number';
-button.style.display = `block`;
 
 type Tuple<T, N extends number> = N extends N 
   ? number extends N 
@@ -371,35 +368,43 @@ let toOneHotEncodng = (digit: Digit): Tuple<number, 10> =>
 		.with(9, () => [0, 0, 0, 0, 0, 0, 0, 0, 0, 1])
 		.exhaustive();
 
-async function loadDataset(url: string): Promise<DataType> {
-	let response: Response = await fetch(url);
-	
-	if (!response.ok) { throw new Error(`HTTP ${response.status}`) }
-	
-	let text: string = await response.text();
-	let data: DataType = JSON.parse(text);
-	
-	return data;
-}
+//////////////////////////////////////////////////////////////////////////////////////////////////////
+//                                          IMPLEMENTATION                                          //
+//////////////////////////////////////////////////////////////////////////////////////////////////////
 
-let dataset: DataType = await loadDataset(datasetURL);
-let datasetLength: number = dataset.length;
+let learningRate: number = 0.01;
+let neuralNetworkDimensions: [784, ...number[], 10] = [784, 128, 128, 10];
+let passes: number = 5;
 
-function drawData(index: number, span: HTMLSpanElement, canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D): undefined {
-	let pixelSize: number = canvas.width / 28;
-	
-	for (let i = 0; i < 28; i++) {
-		for (let j = 0; j < 28; j++) {
-			let color: number = dataset[index].image[j * 28 + i];
-			ctx.fillStyle = `rgb(${color}, ${color}, ${color})`;
-			ctx.fillRect(i * pixelSize, j * pixelSize, pixelSize + 1, pixelSize + 1);
-		}
-	}
-	
-	span.innerText = `${dataset[index].label}`;
-}
+let canvasSize: number = 300;
 
-// Sanity check
+let canvas1 = document.getElementById('canvas1') as HTMLCanvasElement;
+canvas1.width = canvasSize;
+canvas1.height = canvasSize;
+canvas1.style.border = '1px solid red';
+
+let ctx1 = canvas1.getContext('2d') as CanvasRenderingContext2D;
+
+let canvas2 = document.getElementById('canvas2') as HTMLCanvasElement;
+canvas1.width = canvasSize;
+canvas1.height = canvasSize;
+canvas1.style.border = `1px solid red`;
+
+let ctx2 = canvas1.getContext('2d') as CanvasRenderingContext2D;
+
+let span = document.querySelector('span') as HTMLSpanElement;
+span.style.display = `block`;
+
+let button = document.querySelector('button') as HTMLButtonElement;
+button.innerText = 'New number';
+button.style.display = `block`;
+
+let sigmoid: ActivationFunction = (x) => 1 / (1 + Math.exp(-x));
+
+let net = new Network(
+	sigmoid,
+	neuralNetworkDimensions
+);
 
 drawData(0, span, canvas1, ctx1);
 
@@ -407,95 +412,52 @@ button.addEventListener('click', () => {
 	let randomIndex: number = Math.floor(Math.random() * datasetLength);
 	drawData(randomIndex, span, canvas1, ctx1);
 	
-	// Test the network's prediction
 	let input = new Vector(dataset[randomIndex].image.map(pixel => pixel / 255));
 	let output: Vector = net.output(input);
 	let prediction: number = output.data[0].indexOf(Math.max(...output.data[0]));
+
+	// eslint-disable-next-line no-console
 	console.log(`Actual: ${dataset[randomIndex].label}, Predicted: ${prediction}`);
 });
 
-// Create network: 784 inputs, 128 hidden, 10 outputs
-let net = new Network(
-  (x) => 1 / (1 + Math.exp(-x)), // Sigmoid
-  [784, 128, 128, 10]
-);
 
-// Replace the training loop at the bottom with this async version:
-
-let passes: number = 5;
-
-// Global flag to control training
 let isTraining: boolean = false;
 let shouldStop: boolean = false;
 
-// Helper function to yield to the browser
-function sleep(ms: number = 0): Promise<void> {
-	return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-async function trainNetwork(): Promise<undefined> {
-	if (isTraining) {
-		console.log('Training already in progress!');
-		return;
-	}
+async function trainNetwork(): Promise<void> {
+	if (isTraining) { return }
 	
 	isTraining = true;
 	shouldStop = false;
-	console.log('Training started. Type stopTraining() to stop.');
 	
 	let error: number = 0;
 	
 	for (let pass: number = 0; pass < passes; pass++) {
-		if (shouldStop) {
-			console.log('Training stopped by user.');
-			break;
-		}
+		if (shouldStop) { break }
 		
 		for (let i = 0; i < datasetLength; i++) {
-			if (shouldStop) {
-				console.log('Training stopped by user.');
-				break;
-			}
+			if (shouldStop) { break }
 			
 			let input = new Vector(dataset[i].image.map(pixel => pixel / 255));
 			let expected = new Vector(toOneHotEncodng(dataset[i].label));
 			error = net.train(input, expected, learningRate);
 
-			// Log progress
-			if (i % 200 == 0) { 
-				console.log(`Pass ${pass + 1}, Sample ${i}: ${error}`);
-			}
+			// eslint-disable-next-line no-console
+			if (i % 200 == 0) { console.log(`Pass ${pass + 1}, Sample ${i}: ${error}`) }
 			
-			// Yield to browser every 50 samples to keep UI responsive
-			if (i % 50 == 0) {
-				await sleep(0);
-			}
+			if (i % 50 == 0) { await new Promise(resolve => setTimeout(resolve, 0)) }
 		}
 		
-		if (!shouldStop) {
-			console.log(`Pass ${pass + 1} complete. Final error: ${error}`);
-		}
+		// eslint-disable-next-line no-console
+		if (!shouldStop) { console.log(`Pass ${pass + 1} complete. Final error: ${error}`) }
 	}
-	
-	if (!shouldStop) {
-		console.log('Training complete!');
-	}
+
+	// eslint-disable-next-line no-console
+	if (!shouldStop) { console.log('Training complete!'); }
 	
 	isTraining = false;
 }
 
-// Function to stop training (call from console)
-function stopTraining(): undefined {
-	if (!isTraining) {
-		console.log('No training in progress.');
-		return;
-	}
-	console.log('Stopping training...');
-	shouldStop = true;
-}
+(window as any).stopTraining = () => { shouldStop = true };
 
-// Make stopTraining available globally
-(window as any).stopTraining = stopTraining;
-
-// Start training
 trainNetwork();

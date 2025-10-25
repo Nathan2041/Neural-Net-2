@@ -18,13 +18,14 @@ export default defineConfig(
 			'no-debugger': 'off',
 			'space-infix-ops': 'error',
 			'curly': 'warn',
+			'no-console': 'warn',
 			
 			// TypeScript
 			'@typescript-eslint/no-inferrable-types': 'off',
 			'@typescript-eslint/no-unused-expressions': 'off',
 			'@typescript-eslint/consistent-type-definitions': 'off',
 			'@typescript-eslint/no-explicit-any': 'off',
-			'@typescript-eslint/prefer-for-of': 'off',  
+			'@typescript-eslint/prefer-for-of': 'off',
 			
 			// Annoying errors
 			'no-empty': 'off',
