@@ -385,13 +385,6 @@ canvas1.style.border = '1px solid red';
 
 let ctx1 = canvas1.getContext('2d') as CanvasRenderingContext2D;
 
-let canvas2 = document.getElementById('canvas2') as HTMLCanvasElement;
-canvas1.width = canvasSize;
-canvas1.height = canvasSize;
-canvas1.style.border = `1px solid red`;
-
-let ctx2 = canvas1.getContext('2d') as CanvasRenderingContext2D;
-
 let span = document.querySelector('span') as HTMLSpanElement;
 span.style.display = `block`;
 
